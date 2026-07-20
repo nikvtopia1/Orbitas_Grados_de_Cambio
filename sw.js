@@ -1,7 +1,7 @@
 // Service worker de Órbitas — generado por fuentes/build-orbitas.js. No editar a mano.
 // Estrategia: red primero, caché de respaldo. Así el que abre la página siempre ve la
 // última versión si tiene señal, y sigue funcionando entero sin conexión.
-var CACHE = "orbitas-989581ae35";
+var CACHE = "orbitas-7bfdf6b434";
 var ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png"];
 self.addEventListener("install", function(e){
   self.skipWaiting();

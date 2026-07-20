@@ -60,15 +60,15 @@
   <span id="posLbl" title="posición dentro del gran ciclo (ancho fijo: no mueve el layout)" style="font-family:Consolas,monospace;display:inline-block;width:118px;text-align:left">acorde 0 / 42</span>
   <span title="velocidad = frecuencia de la nota · A4 = 432 Hz · 1 Hz = 1 vuelta/seg (las 15: 1 acorde/seg) · ▼▲ mueve por el intervalo elegido · Shift = octava · rango C-12 a B8">nota:
     <button id="noteDown">▼</button>
-    <span id="noteLbl" style="font-family:Consolas,monospace">C1 · 32.11 Hz</span>
+    <span id="noteLbl" title="ancho fijo: el texto más largo posible son 28 caracteres (modo armónicos), así los controles nunca se corren de lugar" style="font-family:Consolas,monospace;display:inline-block;width:28ch;text-align:left">C-6 · 0.251 Hz</span>
     <button id="noteUp">▲</button>
     <select id="ivl" title="intervalo del paso de velocidad">
-      <option value="1" selected>semitono</option>
+      <option value="1">semitono</option>
       <option value="2">2ª M</option>
       <option value="3">3ª m</option>
       <option value="4">3ª M</option>
       <option value="7">5ª J</option>
-      <option value="12">8ª</option>
+      <option value="12" selected>8ª</option>
       <option value="arm">armónicos</option>
     </select></span>
   <label title="las 15: une el mismo grado dentro de cada anillo (sus subciclos) · 1+2·2+1: los heptágonos"><input type="checkbox" id="inners"> internas</label>
@@ -137,11 +137,10 @@ var noteIdx=0, curFreq=0;
 var harmMode=false, harmFund=0, harmN=1; // modo serie armónica: ×1, ×2, ×3, ×4…
 function noteFreq(i){ return 432*Math.pow(2,((24+i)-69)/12); }
 function noteName(i){ return NOTE_NAMES[((i%12)+12)%12]+(Math.floor(i/12)+1); }
+// Sin el "(N s/vuelta)": aparecía solo por debajo de 1 Hz y al aparecer alargaba el
+// texto, lo que corría de lugar los controles de al lado.
 function fmtHz(f){
-  var s=f>=1000?f.toFixed(0):f>=100?f.toFixed(1):f>=1?f.toFixed(2):f.toPrecision(3);
-  if(f<1){ var sv=1/f; s+=" Hz ("+(sv>=100?Math.round(sv):sv.toFixed(1))+" s/vuelta)"; }
-  else s+=" Hz";
-  return s;
+  return (f>=1000?f.toFixed(0):f>=100?f.toFixed(1):f>=1?f.toFixed(2):f.toPrecision(3))+" Hz";
 }
 function idxOfFreq(f){ return Math.round(12*Math.log(f/432)/Math.LN2+69)-24; }
 function setNote(i){
@@ -441,7 +440,7 @@ function step(dir){
 document.getElementById("play").addEventListener("click",function(){ setPlaying(!playing); });
 document.getElementById("stepFwd").addEventListener("click",function(){ step(1); });
 document.getElementById("stepBack").addEventListener("click",function(){ step(-1); });
-var ivl=1;
+var ivl=12; // por defecto el paso de velocidad es de una OCTAVA (coincide con el <select>)
 document.getElementById("ivl").addEventListener("change",function(){
   if(this.value==="arm"){
     harmFund=noteIdx;        // la nota actual pasa a ser la FUNDAMENTAL de la serie
@@ -585,7 +584,7 @@ if(qm && CAMS[qm]) mode=qm;
 mbs.forEach(function(o){ o.classList.toggle("sel",o.getAttribute("data-mode")===mode); });
 fbs.forEach(function(o){ o.classList.toggle("sel",o.getAttribute("data-ds")===dataset); });
 resetCam();
-setNote(isNaN(qn)?0:qn); // default C1 = 32.11 Hz con A4=432
+setNote(isNaN(qn)?-84:qn); // default C-6 = 0.251 Hz con A4=432 (un acorde cada ~4 s)
 render();
 requestAnimationFrame(frame);
 })();
