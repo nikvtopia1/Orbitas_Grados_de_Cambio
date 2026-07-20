@@ -42,7 +42,7 @@
 </head>
 <body>
 <h1>Grados de Cambio — Órbitas</h1>
-<div class="legend"><span class="chip"><span class="dot" style="background:#ff2d55"></span>I</span><span class="chip"><span class="dot" style="background:#ff9500"></span>ii</span><span class="chip"><span class="dot" style="background:#ffd60a"></span>iii</span><span class="chip"><span class="dot" style="background:#0aff9d"></span>IV</span><span class="chip"><span class="dot" style="background:#00cfff"></span>V</span><span class="chip"><span class="dot" style="background:#7a5cff"></span>vi</span><span class="chip"><span class="dot" style="background:#ff5cf4"></span>vii°</span><span class="chip" style="color:#777">· más claro = ⁶ / ⁶₄</span><br><span class="orbits">30 anillos: Asc ↻ adentro, Desc ↺ pegada afuera; período manda el radio (7 · 14 · 21 · 42) · gran cierre cada 42 acordes · en el dataset "1+2 · 2+1": rojo/azul fuertes, verde ⁶, amarillo ⁶₄, gemelas y heptágonos · arrastrá = orbitar, rueda = zoom, doble click = reset</span></div>
+<div class="legend"><span class="chip"><span class="dot" style="background:#ff2d55"></span>I</span><span class="chip"><span class="dot" style="background:#ff9500"></span>ii</span><span class="chip"><span class="dot" style="background:#ffd60a"></span>iii</span><span class="chip"><span class="dot" style="background:#0aff9d"></span>IV</span><span class="chip"><span class="dot" style="background:#00cfff"></span>V</span><span class="chip"><span class="dot" style="background:#7a5cff"></span>vi</span><span class="chip"><span class="dot" style="background:#ff5cf4"></span>vii°</span><span class="chip" style="color:#777">· más claro = ⁶ / ⁶₄</span><br><span class="orbits">30 anillos: Asc ↻ adentro, Desc ↺ pegada afuera; período manda el radio (7 · 14 · 21 · 42) · gran cierre cada 42 acordes · en el dataset "1+2 · 2+1": rojo/azul fuertes, verde ⁶, amarillo ⁶₄, gemelas y heptágonos · arrastrá = orbitar · Shift+arrastrá o dos dedos = mover · rueda o pellizco = zoom (al puntero) · doble click = reset</span></div>
 <div id="wrap"><canvas id="cv" width="680" height="680"></canvas></div>
 <div class="controls">
   <span>fórmulas:
@@ -102,8 +102,32 @@ var spin=0, playing=false, upright=true, showInners=false, showGuides=false, las
 var hideText=false; // pantalla completa y captura: solo lo visual, cero texto en el lienzo
 var STEP=360/14, tween=null;
 var CAMS={ plano:{yaw:0,pitch:0}, cilindro:{yaw:-0.5,pitch:0.42}, giro:{yaw:-0.42,pitch:0.30}, esfera:{yaw:-0.42,pitch:0.35}, helice:{yaw:-0.55,pitch:0.34} };
-var cam={yaw:0,pitch:0,zoom:1};
-function resetCam(){ cam.yaw=CAMS[mode].yaw; cam.pitch=CAMS[mode].pitch; cam.zoom=1; }
+// panX/panY: desplazamiento de la escena en píxeles del lienzo. Permite llevar cualquier
+// zona al centro y hacerle zoom ahí (con dos dedos, o Shift+arrastrar con el mouse).
+var cam={yaw:0,pitch:0,zoom:1,panX:0,panY:0};
+function resetCam(){ cam.yaw=CAMS[mode].yaw; cam.pitch=CAMS[mode].pitch; cam.zoom=1; cam.panX=0; cam.panY=0; }
+// De coordenadas del navegador a coordenadas del lienzo: el canvas se muestra escalado
+// por CSS (width:100%), así que un píxel de pantalla no es un píxel de dibujo.
+function aLienzo(px,py){
+  var r=cv.getBoundingClientRect();
+  return { x:(px-r.left)*(W/(r.width||W)), y:(py-r.top)*(H/(r.height||H)) };
+}
+// Tope generoso del desplazamiento: sirve para no perder el dibujo fuera de la pantalla.
+function limitarPan(){
+  var Lx=W*(0.25+0.55*cam.zoom), Ly=H*(0.25+0.55*cam.zoom);
+  if(cam.panX>Lx)cam.panX=Lx; if(cam.panX<-Lx)cam.panX=-Lx;
+  if(cam.panY>Ly)cam.panY=Ly; if(cam.panY<-Ly)cam.panY=-Ly;
+}
+// Zoom anclado en un punto: lo que está bajo los dedos (o el puntero) se queda ahí.
+// El factor se recalcula DESPUÉS del tope, si no la escena se corre sola al llegar al límite.
+function zoomAncla(k,ax,ay){
+  var z=cam.zoom*k;
+  if(z<0.45)z=0.45; if(z>2.6)z=2.6;
+  k=z/cam.zoom;
+  cam.panX=(ax-CX)*(1-k)+cam.panX*k;
+  cam.panY=(ay-CY)*(1-k)+cam.panY*k;
+  cam.zoom=z; limitarPan();
+}
 function stepUnit(){ return dataset==="all15" ? 1 : STEP; } // las 15: un paso = UN ACORDE
 
 // ---- velocidad como nota musical (A4=432), solo pasos discretos ----
@@ -194,7 +218,7 @@ function proj(p){
   var y2=y1*cp-z1*sp, z2=y1*sp+z1*cp;
   var f=620, d=f-z2; if(d<60) d=60;
   var s=(f/d)*cam.zoom;
-  return {x:CX+x1*s, y:CY+y2*s, s:s, z:z2};
+  return {x:CX+cam.panX+x1*s, y:CY+cam.panY+y2*s, s:s, z:z2};
 }
 
 // ---- dibujo neón ----
@@ -303,8 +327,9 @@ function renderPair(){
       var ta=(-90+p*360/14)*D2R, r1=R2D[0]+23, r2=R2D[0]+30;
       ctx.strokeStyle=p===0?"#b8b8c2":"#33333c"; ctx.lineWidth=p===0?2:1;
       ctx.beginPath();
-      ctx.moveTo(CX+r1*Math.cos(ta)*cam.zoom, CY+r1*Math.sin(ta)*cam.zoom);
-      ctx.lineTo(CX+r2*Math.cos(ta)*cam.zoom, CY+r2*Math.sin(ta)*cam.zoom);
+      // (no pasan por proj(), así que el desplazamiento se aplica a mano)
+      ctx.moveTo(CX+cam.panX+r1*Math.cos(ta)*cam.zoom, CY+cam.panY+r1*Math.sin(ta)*cam.zoom);
+      ctx.lineTo(CX+cam.panX+r2*Math.cos(ta)*cam.zoom, CY+cam.panY+r2*Math.sin(ta)*cam.zoom);
       ctx.stroke();
     }
     ctx.fillStyle="#9a9aa2"; ctx.font="11px Consolas, monospace"; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
@@ -494,23 +519,36 @@ var dragging=false,lx=0,ly=0;
 cv.addEventListener("mousedown",function(e){ dragging=true; lx=e.clientX; ly=e.clientY; cv.classList.add("drag"); });
 window.addEventListener("mousemove",function(e){
   if(!dragging) return;
-  cam.yaw+=(e.clientX-lx)*0.006; cam.pitch+=(e.clientY-ly)*0.006;
-  var lim=1.45; if(cam.pitch>lim)cam.pitch=lim; if(cam.pitch<-lim)cam.pitch=-lim;
+  var dx=e.clientX-lx, dy=e.clientY-ly;
+  if(e.shiftKey){ // Shift+arrastrar = mover la escena (el equivalente de los dos dedos)
+    var r=cv.getBoundingClientRect();
+    cam.panX+=dx*(W/(r.width||W)); cam.panY+=dy*(H/(r.height||H)); limitarPan();
+  } else {
+    cam.yaw+=dx*0.006; cam.pitch+=dy*0.006;
+    var lim=1.45; if(cam.pitch>lim)cam.pitch=lim; if(cam.pitch<-lim)cam.pitch=-lim;
+  }
   lx=e.clientX; ly=e.clientY;
 });
 window.addEventListener("mouseup",function(){ dragging=false; cv.classList.remove("drag"); });
 cv.addEventListener("wheel",function(e){
-  cam.zoom*=Math.pow(1.0015,-e.deltaY);
-  if(cam.zoom<0.45)cam.zoom=0.45; if(cam.zoom>2.6)cam.zoom=2.6;
+  var m=aLienzo(e.clientX,e.clientY); // el zoom de la rueda también se ancla al puntero
+  zoomAncla(Math.pow(1.0015,-e.deltaY), m.x, m.y);
   e.preventDefault();
 },{passive:false});
 cv.addEventListener("dblclick",resetCam);
-// táctil (iPhone/iPad/Android): un dedo = orbitar · dos dedos = zoom (pellizco)
-var pinchD=0;
+// táctil (iPhone/iPad/Android): un dedo = orbitar · dos dedos = mover Y hacer zoom.
+// El punto medio de los dos dedos arrastra la escena, y el zoom queda anclado en ese
+// mismo punto: así se puede agrandar una zona concreta sin perderla de vista.
+var pinchD=0, pinchX=0, pinchY=0;
+function medioDedos(ts){
+  var a=aLienzo(ts[0].clientX,ts[0].clientY), b=aLienzo(ts[1].clientX,ts[1].clientY);
+  return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
+}
 cv.addEventListener("touchstart",function(e){
   if(e.touches.length===1){ lx=e.touches[0].clientX; ly=e.touches[0].clientY; }
   else if(e.touches.length===2){
     pinchD=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    var m=medioDedos(e.touches); pinchX=m.x; pinchY=m.y;
   }
   e.preventDefault();
 },{passive:false});
@@ -521,8 +559,10 @@ cv.addEventListener("touchmove",function(e){
     lx=e.touches[0].clientX; ly=e.touches[0].clientY;
   } else if(e.touches.length===2){
     var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-    if(pinchD>0){ cam.zoom*=d/pinchD; if(cam.zoom<0.45)cam.zoom=0.45; if(cam.zoom>2.6)cam.zoom=2.6; }
-    pinchD=d;
+    var m=medioDedos(e.touches);
+    cam.panX+=m.x-pinchX; cam.panY+=m.y-pinchY; limitarPan();  // mover
+    if(pinchD>0) zoomAncla(d/pinchD, m.x, m.y);                // y hacer zoom ahí mismo
+    pinchD=d; pinchX=m.x; pinchY=m.y;
   }
   e.preventDefault();
 },{passive:false});
