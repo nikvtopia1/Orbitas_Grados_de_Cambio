@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Órbitas">
+<meta name="theme-color" content="#060609">
+<title>Grados de Cambio — Órbitas animadas</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui, sans-serif; background: #060609; color: #c9c9d2;
+         display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 14px; }
+  h1 { font-size: 1.05rem; font-weight: 600; color: #b0b0bc; margin: 4px 0 2px; }
+  .legend { font-size: 0.78rem; color: #8a8a95; text-align: center; line-height: 1.7; margin-bottom: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .orbits { font-size: 0.73rem; }
+  #wrap { width: min(92vmin, 720px); }
+  canvas { width: 100%; height: auto; display: block; cursor: grab; border-radius: 10px; touch-action: none; }
+  canvas.drag { cursor: grabbing; }
+  .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
+              margin-top: 8px; font-size: 0.82rem; color: #a5a5b0;
+              background: #101017; border: 1px solid #23232e; border-radius: 10px; padding: 8px 14px; }
+  button { font-size: 1rem; padding: 2px 12px; border: 1px solid #33333e; border-radius: 6px;
+           background: #1a1a24; color: #c9c9d2; cursor: pointer; }
+  button:hover { background: #23232e; }
+  select { background: #1a1a24; color: #c9c9d2; border: 1px solid #33333e; border-radius: 6px; font-size: 0.8rem; }
+  .mbtn, .fbtn { font-size: 0.8rem; padding: 3px 10px; }
+  .mbtn.sel, .fbtn.sel { background: #2b2b3a; border-color: #5a5a72; color: #fff; }
+  label { user-select: none; cursor: pointer; }
+  /* pantalla completa: SOLO lo visual — sin título, leyenda ni controles.
+     Los atajos de teclado siguen activos (espacio, flechas, F, C, Esc). */
+  body.fs { padding: 0; justify-content: center; }
+  .fs h1, .fs .legend, .fs .controls { display: none; }
+  .fs #wrap { width: min(100vw, 100vh); }
+</style>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+</head>
+<body>
+<h1>Grados de Cambio — Órbitas</h1>
+<div class="legend"><span class="chip"><span class="dot" style="background:#ff2d55"></span>I</span><span class="chip"><span class="dot" style="background:#ff9500"></span>ii</span><span class="chip"><span class="dot" style="background:#ffd60a"></span>iii</span><span class="chip"><span class="dot" style="background:#0aff9d"></span>IV</span><span class="chip"><span class="dot" style="background:#00cfff"></span>V</span><span class="chip"><span class="dot" style="background:#7a5cff"></span>vi</span><span class="chip"><span class="dot" style="background:#ff5cf4"></span>vii°</span><span class="chip" style="color:#777">· más claro = ⁶ / ⁶₄</span><br><span class="orbits">30 anillos: Asc ↻ adentro, Desc ↺ pegada afuera; período manda el radio (7 · 14 · 21 · 42) · gran cierre cada 42 acordes · en el dataset "1+2 · 2+1": rojo/azul fuertes, verde ⁶, amarillo ⁶₄, gemelas y heptágonos · arrastrá = orbitar, rueda = zoom, doble click = reset</span></div>
+<div id="wrap"><canvas id="cv" width="680" height="680"></canvas></div>
+<div class="controls">
+  <span>fórmulas:
+    <button class="fbtn sel" data-ds="all15">las 15</button>
+    <button class="fbtn" data-ds="pair">1+2 · 2+1</button></span>
+  <span>vista:
+    <button class="mbtn sel" data-mode="plano">plano</button>
+    <button class="mbtn" data-mode="cilindro">cilindro</button>
+    <button class="mbtn" data-mode="giro">giroscopio</button>
+    <button class="mbtn" data-mode="esfera" title="globo terráqueo: anillos como PARALELOS · norte = Asc ↻, sur = Desc ↺ · el período es la latitud (7 y 14 en los polos, 42 en el ecuador)">esfera</button>
+    <button class="mbtn" data-mode="helice">hélice</button></span>
+  <button id="stepBack" title="un paso atrás (←)">⏮</button>
+  <button id="play" title="pausar / seguir (espacio)">▶</button>
+  <button id="stepFwd" title="un paso adelante (→)">⏭</button>
+  <span id="posLbl" title="posición dentro del gran ciclo (ancho fijo: no mueve el layout)" style="font-family:Consolas,monospace;display:inline-block;width:118px;text-align:left">acorde 0 / 42</span>
+  <span title="velocidad = frecuencia de la nota · A4 = 432 Hz · 1 Hz = 1 vuelta/seg (las 15: 1 acorde/seg) · ▼▲ mueve por el intervalo elegido · Shift = octava · rango C-12 a B8">nota:
+    <button id="noteDown">▼</button>
+    <span id="noteLbl" style="font-family:Consolas,monospace">C1 · 32.11 Hz</span>
+    <button id="noteUp">▲</button>
+    <select id="ivl" title="intervalo del paso de velocidad">
+      <option value="1" selected>semitono</option>
+      <option value="2">2ª M</option>
+      <option value="3">3ª m</option>
+      <option value="4">3ª M</option>
+      <option value="7">5ª J</option>
+      <option value="12">8ª</option>
+      <option value="arm">armónicos</option>
+    </select></span>
+  <label title="las 15: une el mismo grado dentro de cada anillo (sus subciclos) · 1+2·2+1: los heptágonos"><input type="checkbox" id="inners"> internas</label>
+  <label title="las circunferencias/hélices de fondo de cada órbita"><input type="checkbox" id="guides"> guías</label>
+  <button id="shot" title="captura PNG 1920×1080 para fondo de pantalla, sin texto (C · va a Descargas)">📷</button>
+  <button id="fs" title="pantalla completa, solo lo visual (F · Esc para salir · C captura)">⛶</button>
+</div>
+<script>
+(function(){
+"use strict";
+var DATA={"SEQS":{"A12":["I","vi⁶","ii","vii°⁶","iii","I⁶","IV","ii⁶","V","iii⁶","vi","IV⁶","vii°","V⁶"],"D12":["I","iii⁶₄","vii°","ii⁶₄","vi","I⁶₄","V","vii°⁶₄","IV","vi⁶₄","iii","V⁶₄","ii","IV⁶₄"],"A21":["I","IV⁶₄","ii","V⁶₄","iii","vi⁶₄","IV","vii°⁶₄","V","I⁶₄","vi","ii⁶₄","vii°","iii⁶₄"],"D21":["I","V⁶","vii°","IV⁶","vi","iii⁶","V","ii⁶","IV","I⁶","iii","vii°⁶","ii","vi⁶"]},"COL":{"A12":["#ff2d55","#0aff9d"],"D12":["#00cfff","#ffd60a"],"A21":["#ff2d55","#ffd60a"],"D21":["#00cfff","#0aff9d"]},"DIR":{"A12":1,"D12":-1,"A21":1,"D21":-1},"ORDER":["A12","D12","A21","D21"],"PAIRS":[{"k1":"A12","i1":0,"p1":0,"k2":"A21","i2":2,"p2":0,"color":"#ff2d55"},{"k1":"A12","i1":0,"p1":2,"k2":"A21","i2":2,"p2":2,"color":"#ff2d55"},{"k1":"A12","i1":0,"p1":4,"k2":"A21","i2":2,"p2":4,"color":"#ff2d55"},{"k1":"A12","i1":0,"p1":6,"k2":"A21","i2":2,"p2":6,"color":"#ff2d55"},{"k1":"A12","i1":0,"p1":8,"k2":"A21","i2":2,"p2":8,"color":"#ff2d55"},{"k1":"A12","i1":0,"p1":10,"k2":"A21","i2":2,"p2":10,"color":"#ff2d55"},{"k1":"A12","i1":0,"p1":12,"k2":"A21","i2":2,"p2":12,"color":"#ff2d55"},{"k1":"D12","i1":1,"p1":0,"k2":"D21","i2":3,"p2":0,"color":"#00cfff"},{"k1":"D12","i1":1,"p1":2,"k2":"D21","i2":3,"p2":2,"color":"#00cfff"},{"k1":"D12","i1":1,"p1":4,"k2":"D21","i2":3,"p2":4,"color":"#00cfff"},{"k1":"D12","i1":1,"p1":6,"k2":"D21","i2":3,"p2":6,"color":"#00cfff"},{"k1":"D12","i1":1,"p1":8,"k2":"D21","i2":3,"p2":8,"color":"#00cfff"},{"k1":"D12","i1":1,"p1":10,"k2":"D21","i2":3,"p2":10,"color":"#00cfff"},{"k1":"D12","i1":1,"p1":12,"k2":"D21","i2":3,"p2":12,"color":"#00cfff"},{"k1":"A12","i1":0,"p1":1,"k2":"D21","i2":3,"p2":13,"color":"#0aff9d"},{"k1":"A12","i1":0,"p1":3,"k2":"D21","i2":3,"p2":11,"color":"#0aff9d"},{"k1":"A12","i1":0,"p1":5,"k2":"D21","i2":3,"p2":9,"color":"#0aff9d"},{"k1":"A12","i1":0,"p1":7,"k2":"D21","i2":3,"p2":7,"color":"#0aff9d"},{"k1":"A12","i1":0,"p1":9,"k2":"D21","i2":3,"p2":5,"color":"#0aff9d"},{"k1":"A12","i1":0,"p1":11,"k2":"D21","i2":3,"p2":3,"color":"#0aff9d"},{"k1":"A12","i1":0,"p1":13,"k2":"D21","i2":3,"p2":1,"color":"#0aff9d"},{"k1":"D12","i1":1,"p1":1,"k2":"A21","i2":2,"p2":13,"color":"#ffd60a"},{"k1":"D12","i1":1,"p1":3,"k2":"A21","i2":2,"p2":11,"color":"#ffd60a"},{"k1":"D12","i1":1,"p1":5,"k2":"A21","i2":2,"p2":9,"color":"#ffd60a"},{"k1":"D12","i1":1,"p1":7,"k2":"A21","i2":2,"p2":7,"color":"#ffd60a"},{"k1":"D12","i1":1,"p1":9,"k2":"A21","i2":2,"p2":5,"color":"#ffd60a"},{"k1":"D12","i1":1,"p1":11,"k2":"A21","i2":2,"p2":3,"color":"#ffd60a"},{"k1":"D12","i1":1,"p1":13,"k2":"A21","i2":2,"p2":1,"color":"#ffd60a"}],"GIG":[{"f":"3","N":7,"P":1,"dir":1,"seq":[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[6,0]]},{"f":"3","N":7,"P":1,"dir":-1,"seq":[[0,0],[6,0],[5,0],[4,0],[3,0],[2,0],[1,0]]},{"f":"1+2","N":14,"P":2,"dir":1,"seq":[[0,0],[5,1],[1,0],[6,1],[2,0],[0,1],[3,0],[1,1],[4,0],[2,1],[5,0],[3,1],[6,0],[4,1]]},{"f":"1+2","N":14,"P":2,"dir":-1,"seq":[[0,0],[2,2],[6,0],[1,2],[5,0],[0,2],[4,0],[6,2],[3,0],[5,2],[2,0],[4,2],[1,0],[3,2]]},{"f":"2+1","N":14,"P":2,"dir":1,"seq":[[0,0],[3,2],[1,0],[4,2],[2,0],[5,2],[3,0],[6,2],[4,0],[0,2],[5,0],[1,2],[6,0],[2,2]]},{"f":"2+1","N":14,"P":2,"dir":-1,"seq":[[0,0],[4,1],[6,0],[3,1],[5,0],[2,1],[4,0],[1,1],[3,0],[0,1],[2,0],[6,1],[1,0],[5,1]]},{"f":"1","N":21,"P":1,"dir":1,"seq":[[0,0],[5,1],[3,2],[1,0],[6,1],[4,2],[2,0],[0,1],[5,2],[3,0],[1,1],[6,2],[4,0],[2,1],[0,2],[5,0],[3,1],[1,2],[6,0],[4,1],[2,2]]},{"f":"1","N":21,"P":1,"dir":-1,"seq":[[0,0],[2,2],[4,1],[6,0],[1,2],[3,1],[5,0],[0,2],[2,1],[4,0],[6,2],[1,1],[3,0],[5,2],[0,1],[2,0],[4,2],[6,1],[1,0],[3,2],[5,1]]},{"f":"2","N":21,"P":1,"dir":1,"seq":[[0,0],[3,2],[6,1],[2,0],[5,2],[1,1],[4,0],[0,2],[3,1],[6,0],[2,2],[5,1],[1,0],[4,2],[0,1],[3,0],[6,2],[2,1],[5,0],[1,2],[4,1]]},{"f":"2","N":21,"P":1,"dir":-1,"seq":[[0,0],[4,1],[1,2],[5,0],[2,1],[6,2],[3,0],[0,1],[4,2],[1,0],[5,1],[2,2],[6,0],[3,1],[0,2],[4,0],[1,1],[5,2],[2,0],[6,1],[3,2]]},{"f":"1+2+3","N":21,"P":3,"dir":1,"seq":[[0,0],[5,1],[1,0],[2,0],[0,1],[3,0],[4,0],[2,1],[5,0],[6,0],[4,1],[0,0],[1,0],[6,1],[2,0],[3,0],[1,1],[4,0],[5,0],[3,1],[6,0]]},{"f":"1+2+3","N":21,"P":3,"dir":-1,"seq":[[0,0],[2,2],[6,0],[5,0],[0,2],[4,0],[3,0],[5,2],[2,0],[1,0],[3,2],[0,0],[6,0],[1,2],[5,0],[4,0],[6,2],[3,0],[2,0],[4,2],[1,0]]},{"f":"1+3+2","N":21,"P":3,"dir":1,"seq":[[0,0],[5,1],[6,1],[2,0],[0,1],[1,1],[4,0],[2,1],[3,1],[6,0],[4,1],[5,1],[1,0],[6,1],[0,1],[3,0],[1,1],[2,1],[5,0],[3,1],[4,1]]},{"f":"1+3+2","N":21,"P":3,"dir":-1,"seq":[[0,0],[2,2],[1,2],[5,0],[0,2],[6,2],[3,0],[5,2],[4,2],[1,0],[3,2],[2,2],[6,0],[1,2],[0,2],[4,0],[6,2],[5,2],[2,0],[4,2],[3,2]]},{"f":"2+1+3","N":21,"P":3,"dir":1,"seq":[[0,0],[3,2],[1,0],[2,0],[5,2],[3,0],[4,0],[0,2],[5,0],[6,0],[2,2],[0,0],[1,0],[4,2],[2,0],[3,0],[6,2],[4,0],[5,0],[1,2],[6,0]]},{"f":"2+1+3","N":21,"P":3,"dir":-1,"seq":[[0,0],[4,1],[6,0],[5,0],[2,1],[4,0],[3,0],[0,1],[2,0],[1,0],[5,1],[0,0],[6,0],[3,1],[5,0],[4,0],[1,1],[3,0],[2,0],[6,1],[1,0]]},{"f":"2+3+1","N":21,"P":3,"dir":1,"seq":[[0,0],[3,2],[4,2],[2,0],[5,2],[6,2],[4,0],[0,2],[1,2],[6,0],[2,2],[3,2],[1,0],[4,2],[5,2],[3,0],[6,2],[0,2],[5,0],[1,2],[2,2]]},{"f":"2+3+1","N":21,"P":3,"dir":-1,"seq":[[0,0],[4,1],[3,1],[5,0],[2,1],[1,1],[3,0],[0,1],[6,1],[1,0],[5,1],[4,1],[6,0],[3,1],[2,1],[4,0],[1,1],[0,1],[2,0],[6,1],[5,1]]},{"f":"3+1+2","N":21,"P":3,"dir":1,"seq":[[0,0],[1,0],[6,1],[2,0],[3,0],[1,1],[4,0],[5,0],[3,1],[6,0],[0,0],[5,1],[1,0],[2,0],[0,1],[3,0],[4,0],[2,1],[5,0],[6,0],[4,1]]},{"f":"3+1+2","N":21,"P":3,"dir":-1,"seq":[[0,0],[6,0],[1,2],[5,0],[4,0],[6,2],[3,0],[2,0],[4,2],[1,0],[0,0],[2,2],[6,0],[5,0],[0,2],[4,0],[3,0],[5,2],[2,0],[1,0],[3,2]]},{"f":"3+2+1","N":21,"P":3,"dir":1,"seq":[[0,0],[1,0],[4,2],[2,0],[3,0],[6,2],[4,0],[5,0],[1,2],[6,0],[0,0],[3,2],[1,0],[2,0],[5,2],[3,0],[4,0],[0,2],[5,0],[6,0],[2,2]]},{"f":"3+2+1","N":21,"P":3,"dir":-1,"seq":[[0,0],[6,0],[3,1],[5,0],[4,0],[1,1],[3,0],[2,0],[6,1],[1,0],[0,0],[4,1],[6,0],[5,0],[2,1],[4,0],[3,0],[0,1],[2,0],[1,0],[5,1]]},{"f":"1+3","N":42,"P":2,"dir":1,"seq":[[0,0],[5,1],[6,1],[4,2],[5,2],[3,0],[4,0],[2,1],[3,1],[1,2],[2,2],[0,0],[1,0],[6,1],[0,1],[5,2],[6,2],[4,0],[5,0],[3,1],[4,1],[2,2],[3,2],[1,0],[2,0],[0,1],[1,1],[6,2],[0,2],[5,0],[6,0],[4,1],[5,1],[3,2],[4,2],[2,0],[3,0],[1,1],[2,1],[0,2],[1,2],[6,0]]},{"f":"1+3","N":42,"P":2,"dir":-1,"seq":[[0,0],[2,2],[1,2],[3,1],[2,1],[4,0],[3,0],[5,2],[4,2],[6,1],[5,1],[0,0],[6,0],[1,2],[0,2],[2,1],[1,1],[3,0],[2,0],[4,2],[3,2],[5,1],[4,1],[6,0],[5,0],[0,2],[6,2],[1,1],[0,1],[2,0],[1,0],[3,2],[2,2],[4,1],[3,1],[5,0],[4,0],[6,2],[5,2],[0,1],[6,1],[1,0]]},{"f":"3+1","N":42,"P":2,"dir":1,"seq":[[0,0],[1,0],[6,1],[0,1],[5,2],[6,2],[4,0],[5,0],[3,1],[4,1],[2,2],[3,2],[1,0],[2,0],[0,1],[1,1],[6,2],[0,2],[5,0],[6,0],[4,1],[5,1],[3,2],[4,2],[2,0],[3,0],[1,1],[2,1],[0,2],[1,2],[6,0],[0,0],[5,1],[6,1],[4,2],[5,2],[3,0],[4,0],[2,1],[3,1],[1,2],[2,2]]},{"f":"3+1","N":42,"P":2,"dir":-1,"seq":[[0,0],[6,0],[1,2],[0,2],[2,1],[1,1],[3,0],[2,0],[4,2],[3,2],[5,1],[4,1],[6,0],[5,0],[0,2],[6,2],[1,1],[0,1],[2,0],[1,0],[3,2],[2,2],[4,1],[3,1],[5,0],[4,0],[6,2],[5,2],[0,1],[6,1],[1,0],[0,0],[2,2],[1,2],[3,1],[2,1],[4,0],[3,0],[5,2],[4,2],[6,1],[5,1]]},{"f":"2+3","N":42,"P":2,"dir":1,"seq":[[0,0],[3,2],[4,2],[0,1],[1,1],[4,0],[5,0],[1,2],[2,2],[5,1],[6,1],[2,0],[3,0],[6,2],[0,2],[3,1],[4,1],[0,0],[1,0],[4,2],[5,2],[1,1],[2,1],[5,0],[6,0],[2,2],[3,2],[6,1],[0,1],[3,0],[4,0],[0,2],[1,2],[4,1],[5,1],[1,0],[2,0],[5,2],[6,2],[2,1],[3,1],[6,0]]},{"f":"2+3","N":42,"P":2,"dir":-1,"seq":[[0,0],[4,1],[3,1],[0,2],[6,2],[3,0],[2,0],[6,1],[5,1],[2,2],[1,2],[5,0],[4,0],[1,1],[0,1],[4,2],[3,2],[0,0],[6,0],[3,1],[2,1],[6,2],[5,2],[2,0],[1,0],[5,1],[4,1],[1,2],[0,2],[4,0],[3,0],[0,1],[6,1],[3,2],[2,2],[6,0],[5,0],[2,1],[1,1],[5,2],[4,2],[1,0]]},{"f":"3+2","N":42,"P":2,"dir":1,"seq":[[0,0],[1,0],[4,2],[5,2],[1,1],[2,1],[5,0],[6,0],[2,2],[3,2],[6,1],[0,1],[3,0],[4,0],[0,2],[1,2],[4,1],[5,1],[1,0],[2,0],[5,2],[6,2],[2,1],[3,1],[6,0],[0,0],[3,2],[4,2],[0,1],[1,1],[4,0],[5,0],[1,2],[2,2],[5,1],[6,1],[2,0],[3,0],[6,2],[0,2],[3,1],[4,1]]},{"f":"3+2","N":42,"P":2,"dir":-1,"seq":[[0,0],[6,0],[3,1],[2,1],[6,2],[5,2],[2,0],[1,0],[5,1],[4,1],[1,2],[0,2],[4,0],[3,0],[0,1],[6,1],[3,2],[2,2],[6,0],[5,0],[2,1],[1,1],[5,2],[4,2],[1,0],[0,0],[4,1],[3,1],[0,2],[6,2],[3,0],[2,0],[6,1],[5,1],[2,2],[1,2],[5,0],[4,0],[1,1],[0,1],[4,2],[3,2]]}],"COLDEG":[["#ff2d55","#ff7d96","#ffb8c5"],["#ff9500","#ffbd61","#ffdba8"],["#ffd60a","#ffe667","#fff1ac"],["#0aff9d","#67ffc2","#acffde"],["#00cfff","#61e1ff","#a8efff"],["#7a5cff","#ad9aff","#d2c8ff"],["#ff5cf4","#ff9af8","#ffc8fb"]]};
+var SEQS=DATA.SEQS, COL=DATA.COL, DIR=DATA.DIR, ORDER=DATA.ORDER, PAIRS=DATA.PAIRS, GIG=DATA.GIG, COLDEG=DATA.COLDEG;
+var cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+var W=680, H=680, CX=W/2, CY=H/2, D2R=Math.PI/180;
+var dpr=Math.min(2,window.devicePixelRatio||1);
+cv.width=W*dpr; cv.height=H*dpr;
+
+// posiciones de cada GRADO dentro de cada anillo (para las líneas internas del gigante):
+// unir el mismo grado dentro del anillo dibuja sus SUBCICLOS (los arcos de recurrencia).
+GIG.forEach(function(rg){
+  rg.degPos=[[],[],[],[],[],[],[]];
+  for(var m=0;m<rg.N;m++) rg.degPos[rg.seq[m][0]].push(m);
+});
+
+// ---- estado ----
+var dataset="all15", mode="plano"; // el círculo gigante ES la entrada
+// Arranca DETENIDO y en spin=0: es la posición de máxima alineación (los 30 anillos
+// en m=0, todos apuntando al mismo lugar). Se mueve solo cuando el usuario lo pide.
+// "internas" y "guías" arrancan APAGADAS: la vista limpia es la de entrada.
+var spin=0, playing=false, upright=true, showInners=false, showGuides=false, last=null;
+var hideText=false; // pantalla completa y captura: solo lo visual, cero texto en el lienzo
+var STEP=360/14, tween=null;
+var CAMS={ plano:{yaw:0,pitch:0}, cilindro:{yaw:-0.5,pitch:0.42}, giro:{yaw:-0.42,pitch:0.30}, esfera:{yaw:-0.42,pitch:0.35}, helice:{yaw:-0.55,pitch:0.34} };
+var cam={yaw:0,pitch:0,zoom:1};
+function resetCam(){ cam.yaw=CAMS[mode].yaw; cam.pitch=CAMS[mode].pitch; cam.zoom=1; }
+function stepUnit(){ return dataset==="all15" ? 1 : STEP; } // las 15: un paso = UN ACORDE
+
+// ---- velocidad como nota musical (A4=432), solo pasos discretos ----
+var NOTE_NAMES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+var NOTE_MIN=-156, NOTE_MAX=95; // C-12 .. B8
+var noteIdx=0, curFreq=0;
+var harmMode=false, harmFund=0, harmN=1; // modo serie armónica: ×1, ×2, ×3, ×4…
+function noteFreq(i){ return 432*Math.pow(2,((24+i)-69)/12); }
+function noteName(i){ return NOTE_NAMES[((i%12)+12)%12]+(Math.floor(i/12)+1); }
+function fmtHz(f){
+  var s=f>=1000?f.toFixed(0):f>=100?f.toFixed(1):f>=1?f.toFixed(2):f.toPrecision(3);
+  if(f<1){ var sv=1/f; s+=" Hz ("+(sv>=100?Math.round(sv):sv.toFixed(1))+" s/vuelta)"; }
+  else s+=" Hz";
+  return s;
+}
+function idxOfFreq(f){ return Math.round(12*Math.log(f/432)/Math.LN2+69)-24; }
+function setNote(i){
+  harmMode=false;
+  noteIdx=Math.max(NOTE_MIN,Math.min(NOTE_MAX,i));
+  curFreq=noteFreq(noteIdx);
+  document.getElementById("noteLbl").textContent=noteName(noteIdx)+" · "+fmtHz(curFreq);
+}
+// serie armónica sobre la fundamental elegida: la frecuencia es fund×n (entonación justa),
+// así que los armónicos 3, 5, 7… caen ENTRE las notas temperadas — se muestra el desvío.
+function setHarm(n){
+  harmMode=true;
+  harmN=Math.max(1,Math.min(64,Math.round(n)));
+  curFreq=noteFreq(harmFund)*harmN;
+  var m=12*Math.log(curFreq/432)/Math.LN2+69, near=Math.round(m);
+  var cents=Math.round((m-near)*100), cs=cents?(cents>0?"+":"")+cents:"";
+  document.getElementById("noteLbl").textContent=
+    "arm "+harmN+" · "+noteName(near-24)+cs+" · "+fmtHz(curFreq);
+}
+
+// ---- geometrías ----
+var R2D=[276,218,160,102], NR2D=[19,17.5,16,14.5];              // par: plano
+var CYL={R:170,LV:[-135,-45,45,135]};                            // par: cilindro
+var GIR={R:185,TILT:[-67.5,-22.5,22.5,67.5]};                    // par: giroscopio (180° repartidos)
+var HEL={RADS:[170,133,96,59],H:340,TURNS:2};                    // par: hélice
+var G_R=[]; for(var gi=0;gi<30;gi++) G_R.push(58+gi*(310-58)/29); // las 15: radios plano/hélice
+var G_CYL={R:175}; var G_LV=[]; for(gi=0;gi<30;gi++) G_LV.push(-215+gi*430/29);
+// giroscopio: inclinaciones repartidas en los 180° COMPLETOS (antes −70..70 y quedaban
+// dos "gajos" vacíos). (i+0.5)·180/30 − 90 evita duplicar el plano de ±90°.
+var G_GIR={R:205}; var G_TILT=[]; for(gi=0;gi<30;gi++) G_TILT.push((-90+(gi+0.5)*180/30)*D2R);
+// esfera (globo terráqueo): anillos como PARALELOS. Norte = Asc, sur = Desc (espejo).
+// El período es la latitud: fórmula k (orden N ascendente) a 80°−k·74/14 → 3 en los
+// polos, las de 42 pegadas al ecuador. radio = R·cos(lat), altura = ±R·sin(lat).
+var G_SPH={r:[],y:[]};
+for(gi=0;gi<30;gi++){
+  // latitudes de 80° a 2°: la última llega casi al ecuador para que no quede la
+  // franja vacía entre hemisferios (los dos 3+2 se rozan en el ecuador).
+  var kf=Math.floor(gi/2), latg=(80-kf*78/14)*D2R;
+  var sgn=(GIG[gi].dir>0?-1:1); // norte (arriba, y negativa) = Asc
+  G_SPH.r.push(280*Math.cos(latg)); G_SPH.y.push(sgn*280*Math.sin(latg));
+}
+var P_SPH={r:[],y:[]};
+(function(){ var pl=[50,50,20,20]; // 1+2 a ±50°, 2+1 a ±20°
+  for(var q4=0;q4<4;q4++){ var lt=pl[q4]*D2R, sg=(DIR[ORDER[q4]]>0?-1:1);
+    P_SPH.r.push(240*Math.cos(lt)); P_SPH.y.push(sg*240*Math.sin(lt)); }
+})();
+var G_HEL={H:340};
+
+function P3(k,i,m){ // dataset par
+  var ang=(-90+DIR[k]*((m*360/14)+spin))*D2R;
+  var c=Math.cos(ang), s=Math.sin(ang);
+  if(mode==="plano")    return {x:R2D[i]*c, y:R2D[i]*s, z:0};
+  if(mode==="cilindro") return {x:CYL.R*c, y:CYL.LV[i], z:CYL.R*s};
+  if(mode==="giro"){ var t=GIR.TILT[i]*D2R, y0=GIR.R*s; return {x:GIR.R*c, y:y0*Math.cos(t), z:y0*Math.sin(t)}; }
+  if(mode==="esfera") return {x:P_SPH.r[i]*c, y:P_SPH.y[i], z:P_SPH.r[i]*s};
+  var u=m/(14*HEL.TURNS);
+  return {x:HEL.RADS[i]*c, y:HEL.H/2-u*HEL.H, z:HEL.RADS[i]*s};
+}
+function G3(i,m){ // dataset las 15 — spin en ACORDES, cada anillo avanza 360/N por acorde
+  var rg=GIG[i];
+  var ang=(-90+rg.dir*((m+spin)*360/rg.N))*D2R;
+  var c=Math.cos(ang), s=Math.sin(ang);
+  if(mode==="plano")    return {x:G_R[i]*c, y:G_R[i]*s, z:0};
+  if(mode==="cilindro") return {x:G_CYL.R*c, y:G_LV[i], z:G_CYL.R*s};
+  if(mode==="giro"){ var y0=G_GIR.R*s; return {x:G_GIR.R*c, y:y0*Math.cos(G_TILT[i]), z:y0*Math.sin(G_TILT[i])}; }
+  if(mode==="esfera") return {x:G_SPH.r[i]*c, y:G_SPH.y[i], z:G_SPH.r[i]*s};
+  var u=m/rg.N; // hélice: una vuelta = un ciclo completo, de arriba hacia abajo
+  return {x:G_R[i]*c, y:G_HEL.H/2-u*G_HEL.H, z:G_R[i]*s};
+}
+function proj(p){
+  var cy=Math.cos(cam.yaw), sy=Math.sin(cam.yaw);
+  var x1=p.x*cy+p.z*sy, z1=-p.x*sy+p.z*cy, y1=p.y;
+  var cp=Math.cos(cam.pitch), sp=Math.sin(cam.pitch);
+  var y2=y1*cp-z1*sp, z2=y1*sp+z1*cp;
+  var f=620, d=f-z2; if(d<60) d=60;
+  var s=(f/d)*cam.zoom;
+  return {x:CX+x1*s, y:CY+y2*s, s:s, z:z2};
+}
+
+// ---- dibujo neón ----
+function neonLine(a,b,color,wCore,alpha){
+  ctx.lineCap="round";
+  ctx.strokeStyle=color; ctx.globalAlpha=alpha*0.16; ctx.lineWidth=wCore*4.2;
+  ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  ctx.globalAlpha=alpha; ctx.lineWidth=wCore;
+  ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  ctx.globalAlpha=1;
+}
+function neonPath(pts,color,wCore,alpha){
+  for(var pass=0;pass<2;pass++){
+    ctx.strokeStyle=color; ctx.lineCap="round"; ctx.lineJoin="round";
+    ctx.globalAlpha=pass?alpha:alpha*0.16; ctx.lineWidth=pass?wCore:wCore*4.2;
+    ctx.beginPath();
+    for(var j=0;j<pts.length;j++){ if(j)ctx.lineTo(pts[j].x,pts[j].y); else ctx.moveTo(pts[j].x,pts[j].y); }
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+function fontFor(label,base){ return label.length>=5?base-2.8:(label.length>=3?base-1.3:base); }
+
+// ---- render: las 15 fórmulas (30 anillos, color por grado) ----
+function renderAll15(){
+  var i,m,q,rg,j,pts;
+  // guías de anillo (círculos u hélices según vista) — conmutables
+  if(showGuides){
+    for(i=0;i<30;i++){
+      rg=GIG[i]; pts=[];
+      var NSEG = mode==="helice" ? 100 : 64;
+      for(j=0;j<=NSEG;j++) pts.push(proj(G3(i, rg.N*j/NSEG)));
+      neonPath(pts,"rgba(255,255,255,0.5)",0.6,0.26);
+    }
+  }
+  // marcador del gran cierre (se oculta en pantalla completa / captura: solo lo visual)
+  if(!hideText){
+    if(mode==="plano"){
+      var t1=proj({x:0,y:-(G_R[29]+8),z:0}), t2=proj({x:0,y:-(G_R[29]+16),z:0});
+      ctx.strokeStyle="#b8b8c2"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(t1.x,t1.y); ctx.lineTo(t2.x,t2.y); ctx.stroke();
+    }
+    ctx.fillStyle="#9a9aa2"; ctx.font="11px Consolas, monospace"; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+    ctx.fillText("gran cierre · los 30 anillos cierran juntos cada 42 acordes", CX, 14);
+  }
+  // líneas internas: unir el MISMO GRADO dentro de cada anillo = sus subciclos.
+  // 21 → triángulos (recurre cada 7) · 14 → cuerdas (5·9) · 42 → hexágonos (p.ej. 11·3…)
+  if(showInners){
+    for(i=0;i<30;i++){
+      rg=GIG[i];
+      for(var d=0;d<7;d++){
+        var ps=rg.degPos[d];
+        if(ps.length<2) continue;
+        var eN = ps.length===2 ? 1 : ps.length; // 2 puntos: un tramo; 3+: polígono cerrado
+        for(j=0;j<eN;j++){
+          var a2=proj(G3(i,ps[j])), b2=proj(G3(i,ps[(j+1)%ps.length]));
+          neonLine(a2,b2,COLDEG[d][0],0.9,0.32);
+        }
+      }
+    }
+  }
+  // puntos: color por GRADO, inversión aclara; halo = inicio/cierre del anillo
+  var nodes=[];
+  for(i=0;i<30;i++){
+    rg=GIG[i];
+    for(m=0;m<rg.N;m++){
+      q=proj(G3(i,m));
+      var di=rg.seq[m]; // [grado 0..6, inversión 0..2]
+      // fund: TODO acorde en estado fundamental se resalta con halo (pedido del usuario) —
+      // no solo el I del inicio. Las inversiones quedan como puntos simples.
+      nodes.push({q:q, z:q.z, start:m===0, fund:di[1]===0, col:COLDEG[di[0]][di[1]]});
+    }
+  }
+  nodes.sort(function(x,y){ return x.z-y.z; });
+  for(var n=0;n<nodes.length;n++){
+    var nd=nodes[n]; q=nd.q;
+    if(nd.start){
+      // ancla del ciclo (inicio/cierre): doble anillo, un toque más grande
+      ctx.strokeStyle=nd.col; ctx.lineWidth=1.3;
+      ctx.beginPath(); ctx.arc(q.x,q.y,6.0*q.s,0,7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(q.x,q.y,4.2*q.s,0,7); ctx.stroke();
+      ctx.fillStyle=nd.col;
+      ctx.beginPath(); ctx.arc(q.x,q.y,2.6*q.s,0,7); ctx.fill();
+    } else if(nd.fund){
+      // estado fundamental de cualquier grado: halo simple en su color pleno
+      ctx.strokeStyle=nd.col; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.arc(q.x,q.y,4.8*q.s,0,7); ctx.stroke();
+      ctx.fillStyle=nd.col;
+      ctx.beginPath(); ctx.arc(q.x,q.y,2.9*q.s,0,7); ctx.fill();
+    } else {
+      ctx.fillStyle=nd.col;
+      ctx.beginPath(); ctx.arc(q.x,q.y,3.1*q.s,0,7); ctx.fill();
+    }
+  }
+  // (las etiquetas de fórmula por anillo se quitaron a pedido del usuario:
+  //  ensuciaban la visual. El orden de los anillos queda documentado en la leyenda.)
+}
+
+// ---- render: dataset par 1+2/2+1 (todo lo de antes) ----
+function turnsOf(){ return mode==="helice"?HEL.TURNS:1; }
+function stringN(){ return mode==="helice"?14*HEL.TURNS+1:14; }
+function renderPair(){
+  var i,k,p,m,q,a,b;
+  if(!hideText && mode==="plano"){
+    for(p=0;p<14;p++){
+      var ta=(-90+p*360/14)*D2R, r1=R2D[0]+23, r2=R2D[0]+30;
+      ctx.strokeStyle=p===0?"#b8b8c2":"#33333c"; ctx.lineWidth=p===0?2:1;
+      ctx.beginPath();
+      ctx.moveTo(CX+r1*Math.cos(ta)*cam.zoom, CY+r1*Math.sin(ta)*cam.zoom);
+      ctx.lineTo(CX+r2*Math.cos(ta)*cam.zoom, CY+r2*Math.sin(ta)*cam.zoom);
+      ctx.stroke();
+    }
+    ctx.fillStyle="#9a9aa2"; ctx.font="11px Consolas, monospace"; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+    ctx.fillText("cierre · 0 mod 14", CX, 14);
+  }
+  if(showGuides && mode!=="plano"){
+    for(i=0;i<4;i++){
+      k=ORDER[i];
+      var pts=[], NSEG=(mode==="helice")?120:64, span=(mode==="helice")?14*HEL.TURNS:14;
+      for(var j=0;j<=NSEG;j++) pts.push(proj(P3(k,i,span*j/NSEG)));
+      neonPath(pts,"rgba(255,255,255,0.55)",0.7,0.35);
+    }
+  }
+  if(showInners){
+    for(i=0;i<4;i++){
+      k=ORDER[i];
+      if(mode==="helice"){
+        var N=14*HEL.TURNS;
+        for(m=0;m+2<=N;m++){ a=proj(P3(k,i,m)); b=proj(P3(k,i,m+2)); neonLine(a,b,COL[k][m%2],1,0.4); }
+      } else {
+        for(p=0;p<14;p++){ a=proj(P3(k,i,p)); b=proj(P3(k,i,(p+2)%14)); neonLine(a,b,COL[k][p%2],1,0.4); }
+      }
+    }
+  }
+  var T=turnsOf();
+  for(var w=0;w<PAIRS.length;w++){
+    var pr=PAIRS[w];
+    for(var t=0;t<T;t++){
+      a=proj(P3(pr.k1,pr.i1,t*14+pr.p1));
+      b=proj(P3(pr.k2,pr.i2,t*14+pr.p2));
+      neonLine(a,b,pr.color,1.5,0.8);
+    }
+  }
+  var nodes=[];
+  for(i=0;i<4;i++){
+    k=ORDER[i];
+    var N2=stringN();
+    for(m=0;m<N2;m++){ q=proj(P3(k,i,m)); nodes.push({q:q, k:k, i:i, m:m, z:q.z}); }
+  }
+  nodes.sort(function(x,y){ return x.z-y.z; });
+  for(var n=0;n<nodes.length;n++){
+    var nd=nodes[n]; q=nd.q; k=nd.k;
+    var isStart=nd.m%14===0, ring=COL[k][nd.m%2];
+    var nr=(mode==="plano"?NR2D[nd.i]:16)*q.s;
+    var label=SEQS[k][nd.m%14];
+    ctx.fillStyle="#0d0d12"; ctx.strokeStyle=ring; ctx.lineWidth=(isStart?3:2.2)*Math.max(0.7,q.s);
+    ctx.beginPath(); ctx.arc(q.x,q.y,(isStart?nr+3:nr),0,7); ctx.fill(); ctx.stroke();
+    if(isStart){ ctx.lineWidth=1.4; ctx.beginPath(); ctx.arc(q.x,q.y,nr-1.5,0,7); ctx.stroke(); }
+    var fs=fontFor(label,(mode==="plano"?12:11.5))*q.s;
+    ctx.fillStyle="#eef0f2";
+    ctx.font=(isStart?"bold ":"")+fs.toFixed(1)+"px Consolas, monospace";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    if(!upright && mode==="plano"){
+      ctx.save(); ctx.translate(q.x,q.y); ctx.rotate(DIR[k]*spin*D2R);
+      ctx.fillText(label,0,0); ctx.restore();
+    } else ctx.fillText(label,q.x,q.y);
+  }
+  if(!hideText && mode==="plano"){
+    ctx.fillStyle="#55555e"; ctx.font="13px sans-serif"; ctx.textAlign="center";
+    ctx.fillText("1+2 · 2+1", CX, CY-8);
+    ctx.fillStyle="#45454e"; ctx.font="11px sans-serif";
+    ctx.fillText("Do mayor · Asc ↻ · Desc ↺", CX, CY+10);
+  }
+}
+
+function render(){
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle="#060609"; ctx.fillRect(0,0,W,H);
+  if(dataset==="all15") renderAll15(); else renderPair();
+  // Contador de posición: SIEMPRE un ENTERO, de 0 a 42 (o de 0 a 14 en el dataset par).
+  // Antes mostraba decimales mientras se movía ("acorde 13.7") y ese número cambiando en
+  // cada cuadro hacía temblar la barra. Ahora el spin corre por detrás y acá solo se ve
+  // el entero; el ancho del texto es fijo, así que nunca reacomoda los controles.
+  var lbl=document.getElementById("posLbl");
+  var tot = dataset==="all15" ? 42 : 14;
+  var val = dataset==="all15" ? spin : spin/STEP;
+  var vv=((val%tot)+tot)%tot;
+  var txt=(dataset==="all15"?"acorde ":"paso ")+(Math.floor(vv+1e-9)%tot)+" / "+tot;
+  if(lbl.textContent!==txt) lbl.textContent=txt;
+}
+
+// ---- animación ----
+function frame(t){
+  if(last!==null){
+    if(tween){
+      var kk=(t-tween.t0)/160;
+      if(kk>=1){ spin=tween.to; tween=null; }
+      else { var e=1-(1-kk)*(1-kk); spin=tween.from+(tween.to-tween.from)*e; }
+    } else if(playing){
+      // las 15: spin en ACORDES (mód 42 = gran cierre) · par: spin en grados
+      if(dataset==="all15") spin=(spin+(t-last)/1000*curFreq)%42;
+      else spin=(spin+(t-last)/1000*360*curFreq)%360;
+    }
+    render();
+  }
+  last=t;
+  requestAnimationFrame(frame);
+}
+function setPlaying(v){ playing=v; document.getElementById("play").textContent=playing?"⏸":"▶"; }
+function step(dir){
+  setPlaying(false);
+  var u=stepUnit();
+  var base=(tween?tween.to:spin)/u;
+  var target=dir>0?Math.floor(base+1e-9)+1:Math.ceil(base-1e-9)-1;
+  tween={from:spin,to:target*u,t0:performance.now()};
+}
+
+// ---- interacción ----
+document.getElementById("play").addEventListener("click",function(){ setPlaying(!playing); });
+document.getElementById("stepFwd").addEventListener("click",function(){ step(1); });
+document.getElementById("stepBack").addEventListener("click",function(){ step(-1); });
+var ivl=1;
+document.getElementById("ivl").addEventListener("change",function(){
+  if(this.value==="arm"){
+    harmFund=noteIdx;        // la nota actual pasa a ser la FUNDAMENTAL de la serie
+    setHarm(1);
+  } else {
+    ivl=+this.value;
+    setNote(harmMode?idxOfFreq(curFreq):noteIdx); // al volver, engancha a la temperada más cercana
+  }
+});
+// armónicos: click = siguiente/anterior armónico · Shift = doblar/partir (octava de la serie)
+function noteStep(e,sgn){
+  if(harmMode) setHarm(e.shiftKey ? (sgn>0?harmN*2:harmN/2) : harmN+sgn);
+  else setNote(noteIdx+sgn*(e.shiftKey?12:ivl));
+}
+document.getElementById("noteUp").addEventListener("click",function(e){ noteStep(e,+1); });
+document.getElementById("noteDown").addEventListener("click",function(e){ noteStep(e,-1); });
+window.addEventListener("keydown",function(e){
+  if(e.key==="ArrowRight"){ step(1); e.preventDefault(); }
+  else if(e.key==="ArrowLeft"){ step(-1); e.preventDefault(); }
+  else if(e.key==="ArrowUp"){ noteStep(e,+1); e.preventDefault(); }
+  else if(e.key==="ArrowDown"){ noteStep(e,-1); e.preventDefault(); }
+  else if(e.key===" "){ setPlaying(!playing); e.preventDefault(); }
+  else if(e.key==="f"||e.key==="F"){ toggleFS(); e.preventDefault(); }
+  else if(e.key==="c"||e.key==="C"){ capture(); e.preventDefault(); } // captura también en fullscreen
+});
+// pantalla completa (solo lo visual) + captura PNG 1920×1080 para fondo de pantalla
+function toggleFS(){
+  if(document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen();
+}
+document.addEventListener("fullscreenchange",function(){
+  var on=!!document.fullscreenElement;
+  document.body.classList.toggle("fs",on);
+  hideText=on; // en fullscreen no se dibuja ningún texto en el lienzo
+});
+document.getElementById("fs").addEventListener("click",toggleFS);
+// captura: renderiza la escena EN 1920×1080 (render dedicado, sin texto, centrado),
+// no un recorte de la pantalla — sale lista para fondo de escritorio.
+function capture(){
+  var WP=1920, HP=1080, scale=HP/H; // la escena (680 de alto) escala a la altura completa
+  var oc=document.createElement("canvas"); oc.width=WP; oc.height=HP;
+  var s_ctx=ctx, s_W=W, s_H=H, s_CX=CX, s_CY=CY, s_dpr=dpr, s_ht=hideText;
+  ctx=oc.getContext("2d"); dpr=scale; W=WP/scale; H=HP/scale; CX=W/2; CY=H/2; hideText=true;
+  render();
+  ctx=s_ctx; W=s_W; H=s_H; CX=s_CX; CY=s_CY; dpr=s_dpr; hideText=s_ht;
+  var d=new Date(), p=function(n){return (n<10?"0":"")+n;};
+  var a=document.createElement("a");
+  a.download="orbitas-fondo-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+".png";
+  a.href=oc.toDataURL("image/png");
+  a.click();
+}
+document.getElementById("shot").addEventListener("click",capture);
+var mbs=[].slice.call(document.querySelectorAll(".mbtn"));
+mbs.forEach(function(bt){
+  bt.addEventListener("click",function(){
+    mode=this.getAttribute("data-mode");
+    mbs.forEach(function(o){ o.classList.remove("sel"); });
+    this.classList.add("sel");
+    resetCam();
+  });
+});
+var fbs=[].slice.call(document.querySelectorAll(".fbtn"));
+fbs.forEach(function(bt){
+  bt.addEventListener("click",function(){
+    var prev=dataset;
+    dataset=this.getAttribute("data-ds");
+    fbs.forEach(function(o){ o.classList.remove("sel"); });
+    this.classList.add("sel");
+    if(prev!==dataset){ spin=0; tween=null; } // el spin cambia de unidad (acordes ↔ grados)
+  });
+});
+document.getElementById("inners").addEventListener("change",function(){ showInners=this.checked; });
+document.getElementById("guides").addEventListener("change",function(){ showGuides=this.checked; });
+var dragging=false,lx=0,ly=0;
+cv.addEventListener("mousedown",function(e){ dragging=true; lx=e.clientX; ly=e.clientY; cv.classList.add("drag"); });
+window.addEventListener("mousemove",function(e){
+  if(!dragging) return;
+  cam.yaw+=(e.clientX-lx)*0.006; cam.pitch+=(e.clientY-ly)*0.006;
+  var lim=1.45; if(cam.pitch>lim)cam.pitch=lim; if(cam.pitch<-lim)cam.pitch=-lim;
+  lx=e.clientX; ly=e.clientY;
+});
+window.addEventListener("mouseup",function(){ dragging=false; cv.classList.remove("drag"); });
+cv.addEventListener("wheel",function(e){
+  cam.zoom*=Math.pow(1.0015,-e.deltaY);
+  if(cam.zoom<0.45)cam.zoom=0.45; if(cam.zoom>2.6)cam.zoom=2.6;
+  e.preventDefault();
+},{passive:false});
+cv.addEventListener("dblclick",resetCam);
+// táctil (iPhone/iPad/Android): un dedo = orbitar · dos dedos = zoom (pellizco)
+var pinchD=0;
+cv.addEventListener("touchstart",function(e){
+  if(e.touches.length===1){ lx=e.touches[0].clientX; ly=e.touches[0].clientY; }
+  else if(e.touches.length===2){
+    pinchD=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+  }
+  e.preventDefault();
+},{passive:false});
+cv.addEventListener("touchmove",function(e){
+  if(e.touches.length===1){
+    cam.yaw+=(e.touches[0].clientX-lx)*0.006; cam.pitch+=(e.touches[0].clientY-ly)*0.006;
+    var lim=1.45; if(cam.pitch>lim)cam.pitch=lim; if(cam.pitch<-lim)cam.pitch=-lim;
+    lx=e.touches[0].clientX; ly=e.touches[0].clientY;
+  } else if(e.touches.length===2){
+    var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    if(pinchD>0){ cam.zoom*=d/pinchD; if(cam.zoom<0.45)cam.zoom=0.45; if(cam.zoom>2.6)cam.zoom=2.6; }
+    pinchD=d;
+  }
+  e.preventDefault();
+},{passive:false});
+
+// ---- init + URL (compat: ?mode=gigante ≙ las 15 en plano; ?data=pair para el par) ----
+var Q=new URLSearchParams(location.search);
+var qa=parseFloat(Q.get("a")); if(!isNaN(qa)) spin=qa;
+var qn=parseInt(Q.get("note"),10);
+// ?inners=1 / ?guides=1 las prenden; =0 las apaga. Ahora que el default es apagado,
+// el parámetro tiene que poder ir en los dos sentidos (antes solo sabía apagar).
+var qi=Q.get("inners");
+if(qi!==null){ showInners=(qi==="1"); document.getElementById("inners").checked=showInners; }
+var qg=Q.get("guides");
+if(qg!==null){ showGuides=(qg==="1"); document.getElementById("guides").checked=showGuides; }
+var qd=Q.get("data");
+if(qd==="pair"){ dataset="pair"; }
+var qm=Q.get("mode");
+if(qm==="gigante"){ dataset="all15"; qm="plano"; }
+if(qm && CAMS[qm]) mode=qm;
+mbs.forEach(function(o){ o.classList.toggle("sel",o.getAttribute("data-mode")===mode); });
+fbs.forEach(function(o){ o.classList.toggle("sel",o.getAttribute("data-ds")===dataset); });
+resetCam();
+setNote(isNaN(qn)?0:qn); // default C1 = 32.11 Hz con A4=432
+render();
+requestAnimationFrame(frame);
+})();
+</script>
+<script>
+if("serviceWorker" in navigator && location.protocol.indexOf("http") === 0){
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("sw.js").catch(function(){});
+  });
+}
+</script>
+</body>
+</html>
